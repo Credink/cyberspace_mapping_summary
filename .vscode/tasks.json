@@ -1,0 +1,76 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "build cyberscan",
+        "type": "shell",
+        "command": "go build -o ${workspaceFolder}/cyberscan.exe ./cmd/main.go",
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        },
+        "problemMatcher": ["$go"]
+      },
+      {
+        "label": "build multi-platform",
+        "type": "shell",
+        "command": "powershell -ExecutionPolicy Bypass -File ${workspaceFolder}/build.ps1",
+        "group": "build",
+        "problemMatcher": ["$go"],
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared",
+          "showReuseMessage": true,
+          "clear": false
+        }
+      },
+      {
+        "label": "build windows x64",
+        "type": "shell",
+        "command": "go build -o ${workspaceFolder}/cyberscan.exe ./cmd/main.go",
+        "group": "build",
+        "problemMatcher": ["$go"]
+      },
+      {
+        "label": "build linux x64",
+        "type": "shell",
+        "command": "go build -o ${workspaceFolder}/cyberscan_linux_x64 ./cmd/main.go",
+        "group": "build",
+        "problemMatcher": ["$go"],
+        "options": {
+          "env": {
+            "GOOS": "linux",
+            "GOARCH": "amd64"
+          }
+        }
+      },
+      {
+        "label": "build darwin arm64",
+        "type": "shell",
+        "command": "go build -o ${workspaceFolder}/cyberscan_darwin_arm64 ./cmd/main.go",
+        "group": "build",
+        "problemMatcher": ["$go"],
+        "options": {
+          "env": {
+            "GOOS": "darwin",
+            "GOARCH": "arm64"
+          }
+        }
+      },
+      {
+        "label": "build darwin x64",
+        "type": "shell",
+        "command": "go build -o ${workspaceFolder}/cyberscan_darwin_x64 ./cmd/main.go",
+        "group": "build",
+        "problemMatcher": ["$go"],
+        "options": {
+          "env": {
+            "GOOS": "darwin",
+            "GOARCH": "amd64"
+          }
+        }
+      }
+    ]
+  }
