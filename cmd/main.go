@@ -219,165 +219,169 @@ func main() {
 	fmt.Println("[*] 已导出第一轮结果到:", outputPath)
 
 	// 11. C段分析与第二轮查询
-	fmt.Println("[*] 开始C段分析...")
-	cSegmentInfos, err := analysis.CSegmentAnalysis(db, tableName, cfg.Query.MinIPsPerCIDR)
-	if err != nil {
-		log.Printf("[!] C段分析失败: %v", err)
-	} else if len(cSegmentInfos) > 0 {
-		fmt.Printf("[*] 发现 %d 个高密度C段，开始第二轮查询\n", len(cSegmentInfos))
-
-		// 生成第二轮查询目标，过滤掉第一轮已查询的C段
-		secondRoundTargets := analysis.GenerateSecondRoundTargets(cSegmentInfos, validTargets)
-		fmt.Printf("[*] 第二轮查询目标: %d 个\n", len(secondRoundTargets))
-
-		// 获取第一轮查询中已存在的IP列表，用于reliability判断
-		existingIPs, err := database.GetExistingIPs(db, tableName)
-		if err != nil {
-			log.Printf("[!] 获取已存在IP列表失败: %v", err)
-			existingIPs = make(map[string]bool) // 使用空map作为fallback
-		}
-		fmt.Printf("[*] 第一轮查询中已存在 %d 个IP\n", len(existingIPs))
-
-		// 第二轮查询结果
-		secondRoundResults := make([]model.QueryResult, 0)
-		var secondRoundMutex sync.Mutex
-		var secondRoundWg sync.WaitGroup
-
-		// 执行第二轮查询（多协程并发）
-		if cfg.APIKeys.Quake != "" {
-			secondRoundWg.Add(1)
-			go func() {
-				defer secondRoundWg.Done()
-				fmt.Println("[*] 开始第二轮Quake查询...")
-				quakeResults := make([]model.QueryResult, 0)
-
-				for _, t := range secondRoundTargets {
-					results, err := query.QueryQuake(t.Host, cfg.APIKeys.Quake)
-					if err != nil {
-						log.Printf("[!] 第二轮Quake查询 %s 失败: %v", t.Host, err)
-						continue
-					}
-					// 根据IP是否已存在动态设置reliability
-					for i := range results {
-						results[i].Unit = t.Unit
-						// 检查IP是否在第一轮中已存在
-						if existingIPs[results[i].IP] {
-							results[i].Reliability = 1 // IP已存在，reliability=1
-						} else {
-							results[i].Reliability = 2 // 新IP，reliability=2
-						}
-					}
-					quakeResults = append(quakeResults, results...)
-					time.Sleep(queryInterval)
-				}
-
-				// 线程安全地添加结果
-				secondRoundMutex.Lock()
-				secondRoundResults = append(secondRoundResults, quakeResults...)
-				secondRoundMutex.Unlock()
-
-				fmt.Printf("[*] 第二轮Quake查询完成，结果数: %d 条\n", len(quakeResults))
-			}()
-		}
-
-		if cfg.APIKeys.FOFA != "" {
-			secondRoundWg.Add(1)
-			go func() {
-				defer secondRoundWg.Done()
-				fmt.Println("[*] 开始第二轮FOFA查询...")
-				fofaResults := make([]model.QueryResult, 0)
-
-				for _, t := range secondRoundTargets {
-					results, err := query.QueryFofa(t.Host, cfg.APIKeys.FOFA)
-					if err != nil {
-						log.Printf("[!] 第二轮FOFA查询 %s 失败: %v", t.Host, err)
-						continue
-					}
-					// 根据IP是否已存在动态设置reliability
-					for i := range results {
-						results[i].Unit = t.Unit
-						// 检查IP是否在第一轮中已存在
-						if existingIPs[results[i].IP] {
-							results[i].Reliability = 1 // IP已存在，reliability=1
-						} else {
-							results[i].Reliability = 2 // 新IP，reliability=2
-						}
-					}
-					fofaResults = append(fofaResults, results...)
-					time.Sleep(queryInterval)
-				}
-
-				// 线程安全地添加结果
-				secondRoundMutex.Lock()
-				secondRoundResults = append(secondRoundResults, fofaResults...)
-				secondRoundMutex.Unlock()
-
-				fmt.Printf("[*] 第二轮FOFA查询完成，结果数: %d 条\n", len(fofaResults))
-			}()
-		}
-
-		if cfg.APIKeys.Hunter != "" {
-			secondRoundWg.Add(1)
-			go func() {
-				defer secondRoundWg.Done()
-				fmt.Println("[*] 开始第二轮Hunter查询...")
-				hunterResults := make([]model.QueryResult, 0)
-
-				for _, t := range secondRoundTargets {
-					results, err := query.QueryHunter(t.Host, cfg.APIKeys.Hunter)
-					if err != nil {
-						log.Printf("[!] 第二轮Hunter查询 %s 失败: %v", t.Host, err)
-						continue
-					}
-					// 根据IP是否已存在动态设置reliability
-					for i := range results {
-						results[i].Unit = t.Unit
-						// 检查IP是否在第一轮中已存在
-						if existingIPs[results[i].IP] {
-							results[i].Reliability = 1 // IP已存在，reliability=1
-						} else {
-							results[i].Reliability = 2 // 新IP，reliability=2
-						}
-					}
-					hunterResults = append(hunterResults, results...)
-					time.Sleep(queryInterval)
-				}
-
-				// 线程安全地添加结果
-				secondRoundMutex.Lock()
-				secondRoundResults = append(secondRoundResults, hunterResults...)
-				secondRoundMutex.Unlock()
-
-				fmt.Printf("[*] 第二轮Hunter查询完成，结果数: %d 条\n", len(hunterResults))
-			}()
-		}
-
-		// 等待所有第二轮查询协程完成
-		fmt.Println("[*] 等待所有第二轮查询完成...")
-		secondRoundWg.Wait()
-		fmt.Printf("[*] 所有第二轮查询完成，总结果数: %d 条\n", len(secondRoundResults))
-
-		// 保存第二轮结果到数据库（自动去重）
-		if len(secondRoundResults) > 0 {
-			err = database.SaveResults(db, tableName, secondRoundResults)
-			if err != nil {
-				log.Printf("[!] 保存第二轮结果失败: %v", err)
-			} else {
-				fmt.Printf("[*] 第二轮查询完成，新增结果: %d 条\n", len(secondRoundResults))
-			}
-		}
-
-		// 导出第二轮结果
-		secondRoundCSV := util.GenerateCSVFileName(taskID, "step2")
-		secondRoundPath := filepath.Join(resultsDir, secondRoundCSV)
-		err = exporter.ExportTableToCSV(db, tableName, secondRoundPath)
-		if err != nil {
-			log.Printf("[!] 导出第二轮结果失败: %v", err)
-		} else {
-			fmt.Println("[*] 已导出第二轮结果到:", secondRoundPath)
-		}
+	if cfg.Query.MinIPsPerCIDR == -1 {
+		fmt.Println("[*] 配置为跳过第二轮扫描，跳过C段分析")
 	} else {
-		fmt.Println("[*] 未发现高密度C段，跳过第二轮查询")
+		fmt.Println("[*] 开始C段分析...")
+		cSegmentInfos, err := analysis.CSegmentAnalysis(db, tableName, cfg.Query.MinIPsPerCIDR)
+		if err != nil {
+			log.Printf("[!] C段分析失败: %v", err)
+		} else if len(cSegmentInfos) > 0 {
+			fmt.Printf("[*] 发现 %d 个高密度C段，开始第二轮查询\n", len(cSegmentInfos))
+
+			// 生成第二轮查询目标，过滤掉第一轮已查询的C段
+			secondRoundTargets := analysis.GenerateSecondRoundTargets(cSegmentInfos, validTargets)
+			fmt.Printf("[*] 第二轮查询目标: %d 个\n", len(secondRoundTargets))
+
+			// 获取第一轮查询中已存在的IP列表，用于reliability判断
+			existingIPs, err := database.GetExistingIPs(db, tableName)
+			if err != nil {
+				log.Printf("[!] 获取已存在IP列表失败: %v", err)
+				existingIPs = make(map[string]bool) // 使用空map作为fallback
+			}
+			fmt.Printf("[*] 第一轮查询中已存在 %d 个IP\n", len(existingIPs))
+
+			// 第二轮查询结果
+			secondRoundResults := make([]model.QueryResult, 0)
+			var secondRoundMutex sync.Mutex
+			var secondRoundWg sync.WaitGroup
+
+			// 执行第二轮查询（多协程并发）
+			if cfg.APIKeys.Quake != "" {
+				secondRoundWg.Add(1)
+				go func() {
+					defer secondRoundWg.Done()
+					fmt.Println("[*] 开始第二轮Quake查询...")
+					quakeResults := make([]model.QueryResult, 0)
+
+					for _, t := range secondRoundTargets {
+						results, err := query.QueryQuake(t.Host, cfg.APIKeys.Quake)
+						if err != nil {
+							log.Printf("[!] 第二轮Quake查询 %s 失败: %v", t.Host, err)
+							continue
+						}
+						// 根据IP是否已存在动态设置reliability
+						for i := range results {
+							results[i].Unit = t.Unit
+							// 检查IP是否在第一轮中已存在
+							if existingIPs[results[i].IP] {
+								results[i].Reliability = 1 // IP已存在，reliability=1
+							} else {
+								results[i].Reliability = 2 // 新IP，reliability=2
+							}
+						}
+						quakeResults = append(quakeResults, results...)
+						time.Sleep(queryInterval)
+					}
+
+					// 线程安全地添加结果
+					secondRoundMutex.Lock()
+					secondRoundResults = append(secondRoundResults, quakeResults...)
+					secondRoundMutex.Unlock()
+
+					fmt.Printf("[*] 第二轮Quake查询完成，结果数: %d 条\n", len(quakeResults))
+				}()
+			}
+
+			if cfg.APIKeys.FOFA != "" {
+				secondRoundWg.Add(1)
+				go func() {
+					defer secondRoundWg.Done()
+					fmt.Println("[*] 开始第二轮FOFA查询...")
+					fofaResults := make([]model.QueryResult, 0)
+
+					for _, t := range secondRoundTargets {
+						results, err := query.QueryFofa(t.Host, cfg.APIKeys.FOFA)
+						if err != nil {
+							log.Printf("[!] 第二轮FOFA查询 %s 失败: %v", t.Host, err)
+							continue
+						}
+						// 根据IP是否已存在动态设置reliability
+						for i := range results {
+							results[i].Unit = t.Unit
+							// 检查IP是否在第一轮中已存在
+							if existingIPs[results[i].IP] {
+								results[i].Reliability = 1 // IP已存在，reliability=1
+							} else {
+								results[i].Reliability = 2 // 新IP，reliability=2
+							}
+						}
+						fofaResults = append(fofaResults, results...)
+						time.Sleep(queryInterval)
+					}
+
+					// 线程安全地添加结果
+					secondRoundMutex.Lock()
+					secondRoundResults = append(secondRoundResults, fofaResults...)
+					secondRoundMutex.Unlock()
+
+					fmt.Printf("[*] 第二轮FOFA查询完成，结果数: %d 条\n", len(fofaResults))
+				}()
+			}
+
+			if cfg.APIKeys.Hunter != "" {
+				secondRoundWg.Add(1)
+				go func() {
+					defer secondRoundWg.Done()
+					fmt.Println("[*] 开始第二轮Hunter查询...")
+					hunterResults := make([]model.QueryResult, 0)
+
+					for _, t := range secondRoundTargets {
+						results, err := query.QueryHunter(t.Host, cfg.APIKeys.Hunter)
+						if err != nil {
+							log.Printf("[!] 第二轮Hunter查询 %s 失败: %v", t.Host, err)
+							continue
+						}
+						// 根据IP是否已存在动态设置reliability
+						for i := range results {
+							results[i].Unit = t.Unit
+							// 检查IP是否在第一轮中已存在
+							if existingIPs[results[i].IP] {
+								results[i].Reliability = 1 // IP已存在，reliability=1
+							} else {
+								results[i].Reliability = 2 // 新IP，reliability=2
+							}
+						}
+						hunterResults = append(hunterResults, results...)
+						time.Sleep(queryInterval)
+					}
+
+					// 线程安全地添加结果
+					secondRoundMutex.Lock()
+					secondRoundResults = append(secondRoundResults, hunterResults...)
+					secondRoundMutex.Unlock()
+
+					fmt.Printf("[*] 第二轮Hunter查询完成，结果数: %d 条\n", len(hunterResults))
+				}()
+			}
+
+			// 等待所有第二轮查询协程完成
+			fmt.Println("[*] 等待所有第二轮查询完成...")
+			secondRoundWg.Wait()
+			fmt.Printf("[*] 所有第二轮查询完成，总结果数: %d 条\n", len(secondRoundResults))
+
+			// 保存第二轮结果到数据库（自动去重）
+			if len(secondRoundResults) > 0 {
+				err = database.SaveResults(db, tableName, secondRoundResults)
+				if err != nil {
+					log.Printf("[!] 保存第二轮结果失败: %v", err)
+				} else {
+					fmt.Printf("[*] 第二轮查询完成，新增结果: %d 条\n", len(secondRoundResults))
+				}
+			}
+
+			// 导出第二轮结果
+			secondRoundCSV := util.GenerateCSVFileName(taskID, "step2")
+			secondRoundPath := filepath.Join(resultsDir, secondRoundCSV)
+			err = exporter.ExportTableToCSV(db, tableName, secondRoundPath)
+			if err != nil {
+				log.Printf("[!] 导出第二轮结果失败: %v", err)
+			} else {
+				fmt.Println("[*] 已导出第二轮结果到:", secondRoundPath)
+			}
+		} else {
+			fmt.Println("[*] 未发现高密度C段，跳过第二轮查询")
+		}
 	}
 
 	// 12. IP业务数量分析

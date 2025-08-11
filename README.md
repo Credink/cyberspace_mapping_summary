@@ -13,7 +13,7 @@
 
 配置config.yaml里的api key，把任务丢到targets.csv里面，运行可执行程序即可
 
-第一次运行可执行程序时会自动生成configy.yaml和targets.csv
+第一次运行可执行程序时会自动生成config.yaml和targets.csv
 
 ### 配置
 
@@ -24,7 +24,7 @@
 ```
 # 查询参数设置
 query:
-  min_ips_per_cidr: 10          # 一个C段最少有几个IP才会被二次扫描
+  min_ips_per_cidr: 10          # 一个C段最少有几个IP才会被二次扫描；设置为-1时跳过第二轮扫描
   min_urls_per_ip_for_flag: 10  # 同一个IP关联URL超过这个数量，标记为"需要手动扫描"
 ```
 
