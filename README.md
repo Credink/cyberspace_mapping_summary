@@ -64,7 +64,26 @@ query:
 
 - 可以找ai写个脚本，自动化梳理可以暴破弱口令的协议，梳理出来自动化调用密码暴破工具，对这些协议进行弱口令暴力破解
 
-## 3. 整体思路与流程
+## 3.enscan_go自动梳理脚本
+
+enscan_extract.py是enscan_go的自动化梳理脚本
+
+在该脚本所在目录创建targets文件夹
+
+把enscan_go输出的excel都放在targets文件夹里面
+
+运行enscan_extract.py会自动在results文件夹中生成一个csv，该csv保存了enscan_go这些excel的ICP备案信息结果，并且设置了可以直接用于cyberscan工具的格式
+
+依赖库：
+
+```
+pandas>=1.3.0
+openpyxl>=3.0.0
+xlrd>=2.0.0
+```
+
+## 4. 整体思路与流程
+
 1. **读取配置**：从`config.yaml`读取各平台API Key、C段阈值、IP业务数量阈值等配置。
 2. **记录任务ID**：程序启动时记录当前年月日与时间戳后8位，生成如`20250714_12345678`的任务ID，并在`results`目录下创建对应子目录。
 3. **加载目标**：
